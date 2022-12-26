@@ -594,6 +594,7 @@ dependencies = [
 name = "gpu-testing"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "cacao",
  "env_logger",
  "log",

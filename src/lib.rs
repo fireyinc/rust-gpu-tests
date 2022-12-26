@@ -1,12 +1,15 @@
 #![allow(deprecated)]
 
 
+use wgpu::util::DeviceExt;
 use winit:: {
     event::*,
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder, dpi::LogicalSize,
     window::Window
 };
+
+
 
 struct State{
     surface: wgpu::Surface,
@@ -16,7 +19,28 @@ struct State{
     size: winit::dpi::PhysicalSize<u32>,
     color: wgpu::Color,
     pipeline: wgpu::RenderPipeline,
+    buffer: wgpu::Buffer,
 }
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+struct Vertex {
+    position: [f32; 3],
+    color: [f32; 3]
+}
+
+unsafe impl bytemuck::Pod for Vertex {}
+unsafe impl bytemuck::Zeroable for Vertex {}
+ 
+
+
+const VERTICES: &[Vertex] = &[
+    Vertex { position: [0., 0.5, 0.], color: [0., 0., 1.] },
+    Vertex { position: [-0.5, -0.5, 0.], color: [0., 1., 0.] },
+    Vertex { position: [0.5, -0.5, 0.], color: [1., 0., 0.] },
+];
+
+
 
 impl State {
     async fn new(window: &Window) -> Self {
@@ -106,6 +130,12 @@ impl State {
             }),
             multiview: None,
         });
+
+        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Buffer"),
+            contents: bytemuck::cast_slice(VERTICES),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
  
 
 
@@ -116,7 +146,8 @@ impl State {
             config,
             size,
             color,
-            pipeline
+            pipeline,
+            buffer
         }
 
 

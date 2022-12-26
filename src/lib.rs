@@ -19,7 +19,10 @@ struct State{
     size: winit::dpi::PhysicalSize<u32>,
     color: wgpu::Color,
     pipeline: wgpu::RenderPipeline,
-    buffer: wgpu::Buffer,
+    v_buffer: wgpu::Buffer,
+    i_buffer: wgpu::Buffer,
+    num_vertices: u32,
+    num_indices: u32
 }
 
 #[repr(C)]
@@ -29,6 +32,29 @@ struct Vertex {
     color: [f32; 3]
 }
 
+impl Vertex {
+    fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
+        
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x3,
+                    offset: 0,
+                    shader_location: 0,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x3,
+                    offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                    shader_location: 1,
+                }
+            ],
+        }
+    }
+}
+
+
 unsafe impl bytemuck::Pod for Vertex {}
 unsafe impl bytemuck::Zeroable for Vertex {}
  
@@ -36,8 +62,18 @@ unsafe impl bytemuck::Zeroable for Vertex {}
 
 const VERTICES: &[Vertex] = &[
     Vertex { position: [0., 0.5, 0.], color: [0., 0., 1.] },
-    Vertex { position: [-0.5, -0.5, 0.], color: [0., 1., 0.] },
-    Vertex { position: [0.5, -0.5, 0.], color: [1., 0., 0.] },
+    Vertex { position: [-0.25, -0.5, 0.], color: [0., 1., 0.] },
+    Vertex { position: [0.25, -0.5, 0.], color: [1., 0., 0.] },
+    Vertex { position: [0.4, 0.1, 0.], color: [1., 0., 0.] },
+    Vertex { position: [-0.4, 0.1, 0.], color: [1., 0., 0.] },
+        
+];
+
+
+const INDICES: &[u16] = &[
+    0, 1, 2,
+    3, 0, 2,
+    4, 1, 0
 ];
 
 
@@ -58,7 +94,7 @@ impl State {
         let (device, queue) = adapter.request_device(
             
             &wgpu::DeviceDescriptor{
-                features: wgpu::Features::empty(),
+                features: wgpu::Features::POLYGON_MODE_LINE,
 
                 limits: if cfg!(target_arch = "wasm32"){
                     wgpu::Limits::downlevel_webgl2_defaults()
@@ -106,7 +142,9 @@ impl State {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[]
+                buffers: &[
+                    Vertex::desc()
+                ]
             },
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
@@ -131,13 +169,22 @@ impl State {
             multiview: None,
         });
 
-        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Buffer"),
+      
+        let v_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
             contents: bytemuck::cast_slice(VERTICES),
             usage: wgpu::BufferUsages::VERTEX,
         });
- 
 
+        let i_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(INDICES),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
+
+        let num_vertices = VERTICES.len() as u32;
+        let num_indices = INDICES.len() as u32;
 
         Self {
             surface,
@@ -147,7 +194,10 @@ impl State {
             size,
             color,
             pipeline,
-            buffer
+            v_buffer,
+            i_buffer,
+            num_vertices,
+            num_indices,
         }
 
 
@@ -172,23 +222,25 @@ impl State {
         match event {
 
 
-            WindowEvent::CursorMoved { device_id: _, position, modifiers:_} => {
+            // WindowEvent::CursorMoved { device_id: _, position, modifiers:_} => {
 
-                let offsets = (position.x/self.size.width as f64, position.y/self.size.height as f64);
+            //     let offsets = (position.x/self.size.width as f64, position.y/self.size.height as f64);
 
 
 
-                self.color = wgpu::Color {
-                    r: offsets.0,
-                    g: 0.,
-                    b: offsets.1,
-                    a: 1.
-                };
-                self.update();
+            //     self.color = wgpu::Color {
+            //         r: offsets.0,
+            //         g: 0.,
+            //         b: offsets.1,
+            //         a: 1.
+            //     };
+            //     self.update();
 
                 
-                true
-            },
+            //     true
+            // },
+
+                
 
             _ => false
         }
@@ -224,7 +276,10 @@ impl State {
             });
 
             render_pass.set_pipeline(&self.pipeline);
-            render_pass.draw(0..3, 0..1)
+            render_pass.set_vertex_buffer(0, self.v_buffer.slice(..));
+            render_pass.set_index_buffer(self.i_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.draw(0..self.num_vertices, 0..1);
+            render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));

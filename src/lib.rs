@@ -1,6 +1,7 @@
 #![allow(deprecated)]
 
 
+use image::GenericImageView;
 use wgpu::util::DeviceExt;
 use winit:: {
     event::*,
@@ -37,7 +38,7 @@ impl Vertex {
         
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
+            step_mode:  wgpu::VertexStepMode::Vertex,
             attributes: &[
                 wgpu::VertexAttribute {
                     format: wgpu::VertexFormat::Float32x3,
@@ -48,7 +49,7 @@ impl Vertex {
                     format: wgpu::VertexFormat::Float32x3,
                     offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
                     shader_location: 1,
-                }
+                },
             ],
         }
     }
@@ -64,8 +65,10 @@ const VERTICES: &[Vertex] = &[
     Vertex { position: [0., 0.5, 0.], color: [0., 0., 1.] },
     Vertex { position: [-0.25, -0.5, 0.], color: [0., 1., 0.] },
     Vertex { position: [0.25, -0.5, 0.], color: [1., 0., 0.] },
-    Vertex { position: [0.4, 0.1, 0.], color: [1., 0., 0.] },
-    Vertex { position: [-0.4, 0.1, 0.], color: [1., 0., 0.] },
+
+    
+    Vertex { position: [0.4, 0.1, 0.], color: [1., 1., 0.] },
+    Vertex { position: [-0.4, 0.1, 0.], color: [0., 1., 1.] },
         
 ];
 
@@ -85,7 +88,7 @@ impl State {
         let surface = unsafe {instance.create_surface(window)};
         let adapter = instance.request_adapter(
             &wgpu::RequestAdapterOptions{
-                power_preference: wgpu::PowerPreference::LowPower,
+                power_preference: wgpu::PowerPreference::HighPerformance,
                 force_fallback_adapter: false,
                 compatible_surface: Some(&surface)
             }
@@ -107,6 +110,32 @@ impl State {
             None
         ).await.unwrap();
 
+        let diffuse_bytes = include_bytes!("ad_dc10_tex.png");
+        let diffuse_img = image::load_from_memory(diffuse_bytes).unwrap();
+        let diffuse_rgba = diffuse_img.as_rgba8();
+        
+        let tex_dimensions = diffuse_img.dimensions();
+
+        use image::GenericImageView;
+
+
+        let tex_size = wgpu::Extent3d {
+            width: tex_dimensions.0,
+            height: tex_dimensions.1,
+            depth_or_array_layers: 1,
+        };
+
+        let diffuse_tex = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Texture"),
+            size: tex_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        });
+
+        
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,

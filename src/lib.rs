@@ -112,7 +112,7 @@ impl State {
 
         let diffuse_bytes = include_bytes!("ad_dc10_tex.png");
         let diffuse_img = image::load_from_memory(diffuse_bytes).unwrap();
-        let diffuse_rgba = diffuse_img.as_rgba8();
+        let diffuse_rgba = diffuse_img.as_rgba8().unwrap();
         
         let tex_dimensions = diffuse_img.dimensions();
 
@@ -135,6 +135,54 @@ impl State {
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         });
 
+
+        queue.write_texture( 
+            wgpu::ImageCopyTexture {
+                texture: &diffuse_tex,
+                mip_level: 1,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            }, 
+            
+            &diffuse_rgba,
+
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: std::num::NonZeroU32::new(4 * tex_dimensions.0),
+                rows_per_image: std::num::NonZeroU32::new(tex_dimensions.1),
+            }, 
+
+            tex_size
+        );
+
+        let diff_tex_view = diffuse_tex.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let diff_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Sampler"),
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            address_mode_w: wgpu::AddressMode::Repeat,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+
+        let tex_bind_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Texture Bind Layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: todo!(),
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture { 
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true }, 
+                        view_dimension: wgpu::TextureViewDimension::D2, 
+                        multisampled: ()
+                    },
+                    count: todo!(),
+                }
+            ],
+        });
         
 
         let config = wgpu::SurfaceConfiguration {

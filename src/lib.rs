@@ -23,14 +23,16 @@ struct State{
     v_buffer: wgpu::Buffer,
     i_buffer: wgpu::Buffer,
     num_vertices: u32,
-    num_indices: u32
+    num_indices: u32,
+    bind_group: wgpu::BindGroup,
+
 }
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 struct Vertex {
     position: [f32; 3],
-    color: [f32; 3]
+    tex_coord: [f32; 2]
 }
 
 impl Vertex {
@@ -46,7 +48,7 @@ impl Vertex {
                     shader_location: 0,
                 },
                 wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Float32x3,
+                    format: wgpu::VertexFormat::Float32x2,
                     offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
                     shader_location: 1,
                 },
@@ -62,13 +64,13 @@ unsafe impl bytemuck::Zeroable for Vertex {}
 
 
 const VERTICES: &[Vertex] = &[
-    Vertex { position: [0., 0.5, 0.], color: [0., 0., 1.] },
-    Vertex { position: [-0.25, -0.5, 0.], color: [0., 1., 0.] },
-    Vertex { position: [0.25, -0.5, 0.], color: [1., 0., 0.] },
+    Vertex { position: [0., 0.5, 0.], tex_coord: [0., 0.] },
+    Vertex { position: [-0.25, -0.5, 0.], tex_coord: [0., 1.] },
+    Vertex { position: [0.25, -0.5, 0.], tex_coord: [1., 0.] },
 
     
-    Vertex { position: [0.4, 0.1, 0.], color: [1., 1., 0.] },
-    Vertex { position: [-0.4, 0.1, 0.], color: [0., 1., 1.] },
+    Vertex { position: [0.4, 0.1, 0.], tex_coord: [1., 1.] },
+    Vertex { position: [-0.4, 0.1, 0.], tex_coord: [0., 1.] },
         
 ];
 
@@ -88,7 +90,7 @@ impl State {
         let surface = unsafe {instance.create_surface(window)};
         let adapter = instance.request_adapter(
             &wgpu::RequestAdapterOptions{
-                power_preference: wgpu::PowerPreference::L,
+                power_preference: wgpu::PowerPreference::LowPower,
                 force_fallback_adapter: false,
                 compatible_surface: Some(&surface)
             }
@@ -172,15 +174,34 @@ impl State {
             label: Some("Texture Bind Layout"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
-                    binding: todo!(),
+                    binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture { 
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true }, 
-                        view_dimension: wgpu::TextureViewDimension::D2, 
-                        multisampled: ()
-                    },
-                    count: todo!(),
+                    ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
                 }
+
+            ],
+        });
+        
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Bind Group"),
+            layout: &tex_bind_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&diff_tex_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&diff_sampler),
+                },
             ],
         });
         
@@ -208,7 +229,7 @@ impl State {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[],
+                bind_group_layouts: &[&tex_bind_layout],
                 push_constant_ranges: &[],
             });
 
@@ -275,6 +296,7 @@ impl State {
             i_buffer,
             num_vertices,
             num_indices,
+            bind_group,
         }
 
 
@@ -357,6 +379,7 @@ impl State {
             render_pass.set_index_buffer(self.i_buffer.slice(..), wgpu::IndexFormat::Uint16);
             render_pass.draw(0..self.num_vertices, 0..1);
             render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
+            render_pass.set_bind_group(0, &self.bind_group, &[])
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));

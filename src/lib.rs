@@ -88,7 +88,7 @@ impl State {
         let surface = unsafe {instance.create_surface(window)};
         let adapter = instance.request_adapter(
             &wgpu::RequestAdapterOptions{
-                power_preference: wgpu::PowerPreference::HighPerformance,
+                power_preference: wgpu::PowerPreference::L,
                 force_fallback_adapter: false,
                 compatible_surface: Some(&surface)
             }

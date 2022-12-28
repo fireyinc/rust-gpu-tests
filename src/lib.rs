@@ -1,7 +1,6 @@
 #![allow(deprecated)]
 
 
-use image::GenericImageView;
 use wgpu::util::DeviceExt;
 use winit:: {
     event::*,
@@ -10,23 +9,16 @@ use winit:: {
     window::Window
 };
 
+mod texture;
 
 
-struct State{
-    surface: wgpu::Surface,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    config: wgpu::SurfaceConfiguration,
-    size: winit::dpi::PhysicalSize<u32>,
-    color: wgpu::Color,
-    pipeline: wgpu::RenderPipeline,
-    v_buffer: wgpu::Buffer,
-    i_buffer: wgpu::Buffer,
-    num_vertices: u32,
-    num_indices: u32,
-    bind_group: wgpu::BindGroup,
+const OGL_TO_WGPU_MAT: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
+    1., 0., 0., 0.,
+    0., 1. ,0. ,0.,
+    0.,0.,0.5,0.,
+    0., 0., 0.5, 1.
+);
 
-}
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -58,19 +50,68 @@ impl Vertex {
 }
 
 
+struct Camera{
+    eye: cgmath::Point3<f32>,
+    target: cgmath::Point3<f32>,
+    up: cgmath::Vector3<f32>,
+    aspect: f32,
+    fovy: f32,
+    znear: f32,
+    zfar: f32
+}
+
+impl Camera {
+    
+    fn build_view_proj_mat(&self) -> cgmath::Matrix4<f32> {
+
+        let view = cgmath::Matrix4::look_at_rh(self.eye, self.target, self.up);
+
+        let proj = cgmath::perspective(cgmath::Deg(self.fovy), self.aspect, self.znear, self.zfar);
+
+
+        return OGL_TO_WGPU_MAT * proj * view;
+    }
+
+}
+
+
+#[derive(Debug, Clone, Copy)]
+struct CamUniform {
+    view_proj: [[f32; 4]; 4]
+}
+
+
+impl CamUniform {
+    fn new() -> Self {
+        use cgmath::SquareMatrix;
+
+        Self {
+            view_proj: cgmath::Matrix4.identity().into();
+        }
+
+    }
+
+    fn update_view_proj(&mut self, cam: &Camera) {
+        self.view_proj = cam.build_view_proj_mat().into()
+    }
+}
+
+
+
 unsafe impl bytemuck::Pod for Vertex {}
 unsafe impl bytemuck::Zeroable for Vertex {}
- 
+unsafe impl bytemuck::Pod for CamUniform {}
+unsafe impl bytemuck::Zeroable for CamUniform {}
 
 
 const VERTICES: &[Vertex] = &[
-    Vertex { position: [0., 0.5, 0.], tex_coord: [0., 0.5] },
-    Vertex { position: [-0.25, -0.5, 0.], tex_coord: [-0.25, -0.5] },
-    Vertex { position: [0.25, -0.5, 0.], tex_coord: [0.25, -0.5] },
+    Vertex { position: [0., 0.5, 0.], tex_coord: [0.5, 0.] },
+    Vertex { position: [-0.25, -0.5, 1.], tex_coord: [0.25, 1.] },
+    Vertex { position: [0.25, -0.5, 0.], tex_coord: [0.75, 1.] },
 
     
-    Vertex { position: [0.4, 0.1, 0.], tex_coord: [0.4, 0.1] },
-    Vertex { position: [-0.4, 0.1, 0.], tex_coord: [-0.4, 0.1] },
+    Vertex { position: [0.4, 0.1, 0.], tex_coord: [1., 0.35] },
+    Vertex { position: [-0.4, 0.1, 0.], tex_coord: [0., 0.42] },
         
 ];
 
@@ -80,6 +121,26 @@ const INDICES: &[u16] = &[
     3, 0, 2,
     4, 1, 0
 ];
+
+
+struct State{
+    surface: wgpu::Surface,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    config: wgpu::SurfaceConfiguration,
+    size: winit::dpi::PhysicalSize<u32>,
+    color: wgpu::Color,
+    pipeline: wgpu::RenderPipeline,
+    v_buffer: wgpu::Buffer,
+    i_buffer: wgpu::Buffer,
+    num_vertices: u32,
+    num_indices: u32,
+    bind_group: wgpu::BindGroup,
+    texture: texture::Texture,
+    cam: Camera,
+    c_buffer: wgpu::Buffer,
+
+}
 
 
 
@@ -113,62 +174,16 @@ impl State {
         ).await.expect("fak");
 
         let diffuse_bytes = include_bytes!("ad_dc10_tex.png");
-        let diffuse_img = image::load_from_memory(diffuse_bytes).unwrap();
-        let diffuse_rgba = diffuse_img.as_rgba8().unwrap();
         
-        let tex_dimensions = diffuse_img.dimensions();
-
-        use image::GenericImageView;
 
 
-        let tex_size = wgpu::Extent3d {
-            width: tex_dimensions.0,
-            height: tex_dimensions.1,
-            depth_or_array_layers: 1,
-        };
+        
 
-        let diffuse_tex = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Texture"),
-            size: tex_size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-        });
+        let texture = texture::Texture::from_bytes(&device, &queue, diffuse_bytes, Some("Texture")).unwrap();
 
 
-        queue.write_texture( 
-            wgpu::ImageCopyTexture {
-                texture: &diffuse_tex,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            }, 
-            
-            &diffuse_rgba,
+        
 
-            wgpu::ImageDataLayout {
-                offset: 0,
-                bytes_per_row: std::num::NonZeroU32::new(4 * tex_dimensions.0),
-                rows_per_image: std::num::NonZeroU32::new(tex_dimensions.1),
-            }, 
-
-            tex_size
-        );
-
-        let diff_tex_view = diffuse_tex.create_view(&wgpu::TextureViewDescriptor::default());
-
-        let diff_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Sampler"),
-            address_mode_u: wgpu::AddressMode::Repeat,
-            address_mode_v: wgpu::AddressMode::Repeat,
-            address_mode_w: wgpu::AddressMode::Repeat,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Linear,
-            ..Default::default()
-        });
 
         let tex_bind_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Texture Bind Layout"),
@@ -196,11 +211,11 @@ impl State {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&diff_tex_view),
+                    resource: wgpu::BindingResource::TextureView(&texture.view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&diff_sampler),
+                    resource: wgpu::BindingResource::Sampler(&texture.sampler),
                 },
             ],
         });
@@ -216,6 +231,19 @@ impl State {
         };
 
         surface.configure(&device, &config);
+
+
+
+        let cam = Camera {
+            eye: cgmath::Point3::new(0., 1., 2.),
+            target: (0., 0., 0.).into(),
+            up: cgmath::Vector3::unit_y(),
+            aspect: config.height as f32 / config.width as f32,
+            fovy: 45.,
+            znear: 0.1,
+            zfar: 100.,
+        };
+
 
         let color = wgpu::Color {
             r: 0.,
@@ -282,6 +310,29 @@ impl State {
             usage: wgpu::BufferUsages::INDEX,
         });
 
+        let cam_uniform = CamUniform::new();
+        cam_uniform.update_view_proj(&cam);
+
+
+        let c_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Camera Buffer"),
+            contents: bytemuck::cast_slice(&[cam_uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let cam_bind_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Camera Bind Layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+                    count: None,
+                },
+
+            ],
+        });
+        
 
         let num_vertices = VERTICES.len() as u32;
         let num_indices = INDICES.len() as u32;
@@ -299,6 +350,8 @@ impl State {
             num_vertices,
             num_indices,
             bind_group,
+            texture, 
+            cam,
         }
 
 

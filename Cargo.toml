@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.68"
 bytemuck = "1.12.3"
+cgmath = "0.18.0"
 env_logger = "0.10.0"
 image = "0.24.5"
 log = "0.4.17"

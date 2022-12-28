@@ -64,13 +64,13 @@ unsafe impl bytemuck::Zeroable for Vertex {}
 
 
 const VERTICES: &[Vertex] = &[
-    Vertex { position: [0., 0.5, 0.], tex_coord: [0., 0.] },
-    Vertex { position: [-0.25, -0.5, 0.], tex_coord: [0., 1.] },
-    Vertex { position: [0.25, -0.5, 0.], tex_coord: [1., 0.] },
+    Vertex { position: [0., 0.5, 0.], tex_coord: [0., 0.5] },
+    Vertex { position: [-0.25, -0.5, 0.], tex_coord: [-0.25, -0.5] },
+    Vertex { position: [0.25, -0.5, 0.], tex_coord: [0.25, -0.5] },
 
     
-    Vertex { position: [0.4, 0.1, 0.], tex_coord: [1., 1.] },
-    Vertex { position: [-0.4, 0.1, 0.], tex_coord: [0., 1.] },
+    Vertex { position: [0.4, 0.1, 0.], tex_coord: [0.4, 0.1] },
+    Vertex { position: [-0.4, 0.1, 0.], tex_coord: [-0.4, 0.1] },
         
 ];
 
@@ -90,7 +90,7 @@ impl State {
         let surface = unsafe {instance.create_surface(window)};
         let adapter = instance.request_adapter(
             &wgpu::RequestAdapterOptions{
-                power_preference: wgpu::PowerPreference::LowPower,
+                power_preference: wgpu::PowerPreference::HighPerformance,
                 force_fallback_adapter: false,
                 compatible_surface: Some(&surface)
             }
@@ -110,7 +110,7 @@ impl State {
                 label: None
             }, 
             None
-        ).await.unwrap();
+        ).await.expect("fak");
 
         let diffuse_bytes = include_bytes!("ad_dc10_tex.png");
         let diffuse_img = image::load_from_memory(diffuse_bytes).unwrap();
@@ -141,7 +141,7 @@ impl State {
         queue.write_texture( 
             wgpu::ImageCopyTexture {
                 texture: &diffuse_tex,
-                mip_level: 1,
+                mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             }, 
@@ -229,7 +229,9 @@ impl State {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&tex_bind_layout],
+                bind_group_layouts: &[
+                    &tex_bind_layout
+                ],
                 push_constant_ranges: &[],
             });
 
@@ -375,11 +377,12 @@ impl State {
             });
 
             render_pass.set_pipeline(&self.pipeline);
+            render_pass.set_bind_group(0, &self.bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.v_buffer.slice(..));
             render_pass.set_index_buffer(self.i_buffer.slice(..), wgpu::IndexFormat::Uint16);
             render_pass.draw(0..self.num_vertices, 0..1);
             render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
-            render_pass.set_bind_group(0, &self.bind_group, &[])
+
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
